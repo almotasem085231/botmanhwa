@@ -1,33 +1,21 @@
 import logging
 import requests
 from bs4 import BeautifulSoup
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
     MessageHandler,
-    CallbackQueryHandler,
     filters,
 )
 
-# توكن البوت
+# ✅ توكن البوت
 TOKEN = "7167539511:AAHDb4Wb8ZSr9Wz4j0MXjKuSo1huxMT2Khc"
-
-# التصنيفات (إضافية)
-CATEGORIES = [
-    "أكشن", "رومانسي", "مدرسي", "كوميدي", "دراما",
-    "خيال", "مغامرات", "إثارة", "غموض", "فنون قتالية"
-]
 
 logging.basicConfig(level=logging.INFO)
 
-# أزرار التصنيفات
-def category_keyboard():
-    buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
-    return InlineKeyboardMarkup(buttons)
-
-# 🔎 البحث في LekManga فقط
+# 🔎 البحث في موقع LekManga
 def search_lekmanga(query):
     search_url = f"https://lekmanga.net/lek/?s={query}"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -36,34 +24,42 @@ def search_lekmanga(query):
         response = requests.get(search_url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, "html.parser")
 
-        results = soup.select("h3.post-title a")
-        if results:
-            first = results[0]
-            title = first.text.strip()
-            link = first["href"]
-            return f"🔹 <b>LekManga</b>:\n📖 {title}\n🔗 <a href='{link}'>رابط</a>"
+        result = soup.select_one("h3.post-title a")
+        if result:
+            title = result.text.strip()
+            link = result["href"]
+
+            # جلب الصفحة الخاصة بالمانهوا للحصول على التصنيفات
+            page = requests.get(link, headers=headers, timeout=10)
+            page_soup = BeautifulSoup(page.text, "html.parser")
+            genres = page_soup.select(".genres a")
+
+            if genres:
+                genre_list = [g.text.strip() for g in genres]
+                genres_text = "، ".join(genre_list)
+            else:
+                genres_text = "غير محددة"
+
+            return f"""🔹 <b>LekManga</b>:
+📖 <b>{title}</b>
+📚 <b>التصنيفات:</b> {genres_text}
+🔗 <a href="{link}">رابط المانهوا</a>"""
         else:
             return "🔹 <b>LekManga</b>: لا يوجد نتائج."
-    except Exception as e:
+
+    except Exception:
         return "🔹 <b>LekManga</b>: حدث خطأ أثناء البحث."
 
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("أرسل اسم المانهوا التي تريد البحث عنها 🔍", reply_markup=category_keyboard())
+    await update.message.reply_text("أرسل اسم المانهوا التي تريد البحث عنها 🔍")
 
-# عند إرسال اسم
+# الرسائل العادية (اسم المانهوا)
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.message.text
+    query = update.message.text.strip()
     await update.message.reply_html(f"⏳ يتم البحث عن:\n<b>{query}</b>")
     result = search_lekmanga(query)
     await update.message.reply_html(result, disable_web_page_preview=True)
-
-# عند الضغط على تصنيف
-async def handle_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    category = query.data.split(":")[1]
-    await query.message.reply_text(f"أرسل اسم مانهوا من تصنيف: {category} 📚")
 
 # تشغيل البوت
 if __name__ == "__main__":
@@ -71,7 +67,6 @@ if __name__ == "__main__":
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(handle_category, pattern="^cat:"))
 
     print("✅ Bot is running...")
     app.run_polling()
