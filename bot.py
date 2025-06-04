@@ -1,116 +1,86 @@
 import os
+import logging
 import requests
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler,
-    MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 
-# تحميل المتغيرات من ملف .env
-load_dotenv()
-token = os.environ.get("BOT_TOKEN")
+# إعداد اللوجات
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# دوال البحث (ترجع tuple: (نص، رابط الصورة))
-def search_mangalek(query):
-    url = f"https://mangalek.com/?s={query}"
-    r = requests.get(url)
-    soup = BeautifulSoup(r.text, 'html.parser')
-    result = soup.find('div', class_='bsx')
-    if result:
-        title = result.find('a')['title']
-        link = result.find('a')['href']
-        img = result.find('img')['src']
-        text = f"📚 {title}\n🔗 {link}"
-        return (text, img)
-    return None
+# التصنيفات
+CATEGORIES = [
+    "أكشن", "رومانسي", "مدرسي", "كوميدي", "دراما",
+    "خيال", "مغامرات", "إثارة", "غموض", "فنون قتالية"
+]
 
-def search_arabmanga(query):
-    url = f"https://arabmanga.net/?s={query}"
-    r = requests.get(url)
-    soup = BeautifulSoup(r.text, 'html.parser')
-    result = soup.find('div', class_='utao styletwo')
-    if result:
-        title = result.find('a')['title']
-        link = result.find('a')['href']
-        img = result.find('img')['src']
-        text = f"📚 {title}\n🔗 {link}"
-        return (text, img)
-    return None
+# توليد الأزرار للتصنيفات
+def category_keyboard():
+    buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
+    return InlineKeyboardMarkup(buttons)
 
-def search_mangaswat(query):
-    url = f"https://mangaswat.com/?s={query}"
-    r = requests.get(url)
-    soup = BeautifulSoup(r.text, 'html.parser')
-    result = soup.find('div', class_='bs')
-    if result:
-        title = result.find('a')['title']
-        link = result.find('a')['href']
-        img = result.find('img')['src']
-        text = f"📚 {title}\n🔗 {link}"
-        return (text, img)
-    return None
-
-def search_areascans(query):
-    url = f"https://areascans.net/?s={query}"
-    r = requests.get(url)
-    soup = BeautifulSoup(r.text, 'html.parser')
-    result = soup.find('div', class_='bsx')
-    if result:
-        title = result.find('a')['title']
-        link = result.find('a')['href']
-        img = result.find('img')['src']
-        text = f"📚 {title}\n🔗 {link}"
-        return (text, img)
-    return None
-
-def search_all_sites(query):
+# دالة البحث في المواقع
+def search_manhwa(query):
     results = []
-    for func in [search_mangalek, search_arabmanga, search_mangaswat, search_areascans]:
+
+    # مواقع البحث
+    sites = {
+        "Mangalek": f"https://mangalek.net/?s={query}",
+        "ArabManga": f"https://arab-manga.com/?s={query}",
+        "MangaSwat": f"https://mangaswat.com/?s={query}",
+        "AreaScan": f"https://areascans.com/?s={query}"
+    }
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    for name, url in sites.items():
         try:
-            result = func(query)
-            if result:
-                results.append(result)
-        except:
-            continue
-    return results if results else [("🚫 لم يتم العثور على نتائج.", None)]
+            response = requests.get(url, headers=headers, timeout=10)
+            soup = BeautifulSoup(response.text, "html.parser")
 
-# أوامر البوت
+            # نحاول نلقط أول نتيجة
+            first_link = soup.find("a", href=True)
+            if first_link:
+                results.append(f"🔹 <b>{name}</b>: <a href='{first_link['href']}'>رابط</a>")
+            else:
+                results.append(f"🔹 <b>{name}</b>: لا يوجد نتائج.")
+        except Exception as e:
+            results.append(f"🔹 <b>{name}</b>: خطأ أثناء البحث.")
+
+    return "\n".join(results)
+
+# أمر البدء
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 مرحباً! أرسل اسم مانهوا للبحث أو استخدم /categories لاختيار تصنيف.")
+    await update.message.reply_text("أرسل اسم المانهوا التي تريد البحث عنها 🔍", reply_markup=category_keyboard())
 
-async def categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("⚔️ أكشن", callback_data='genre_action')],
-        [InlineKeyboardButton("💘 رومانسي", callback_data='genre_romance')],
-        [InlineKeyboardButton("🧙‍♂️ خيالي", callback_data='genre_fantasy')],
-        [InlineKeyboardButton("🎭 دراما", callback_data='genre_drama')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("📂 اختر تصنيفًا:", reply_markup=reply_markup)
-
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    genre = query.data.split('_')[1]
-    await query.edit_message_text(text=f"📌 تم اختيار التصنيف: {genre} (ميزة التصفية حسب التصنيف تحت التطوير)")
-
+# استقبال الاسم
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
-    await update.message.reply_text("🔍 جاري البحث...")
-    results = search_all_sites(query)
-    for text, img_url in results:
-        if img_url:
-            await update.message.reply_photo(photo=img_url, caption=text)
-        else:
-            await update.message.reply_text(text)
+    await update.message.reply_html("⏳ يتم البحث عن:\n<b>{}</b>".format(query))
+
+    result = search_manhwa(query)
+    await update.message.reply_html(result, disable_web_page_preview=True)
+
+# عند الضغط على تصنيف
+async def handle_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    category = query.data.split(":")[1]
+    await query.message.reply_text(f"أرسل اسم مانهوا من تصنيف: {category} 📚")
 
 # تشغيل البوت
-app = ApplicationBuilder().token(token).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("categories", categories))
-app.add_handler(CallbackQueryHandler(button))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-app.run_polling()
+if __name__ == "__main__":
+    token = os.getenv("BOT_TOKEN")
+    if not token:
+        raise ValueError("⚠️ BOT_TOKEN غير موجود في البيئة!")
+
+    app = ApplicationBuilder().token(token).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(handle_category, pattern="^cat:"))
+
+    print("✅ Bot is running...")
+    app.run_polling()
