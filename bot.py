@@ -1,13 +1,18 @@
-import os
 import logging
 import requests
 from bs4 import BeautifulSoup
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    filters,
+)
 
-# إعداد اللوجات
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# ✅ التوكن الخاص بك
+token = "7167539511:AAHDb4Wb8ZSr9Wz4j0MXjKuSo1huxMT2Khc"
 
 # التصنيفات
 CATEGORIES = [
@@ -15,16 +20,19 @@ CATEGORIES = [
     "خيال", "مغامرات", "إثارة", "غموض", "فنون قتالية"
 ]
 
-# توليد الأزرار للتصنيفات
+# إعداد اللوج
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# أزرار التصنيفات
 def category_keyboard():
     buttons = [[InlineKeyboardButton(cat, callback_data=f"cat:{cat}")] for cat in CATEGORIES]
     return InlineKeyboardMarkup(buttons)
 
-# دالة البحث في المواقع
+# البحث في المواقع
 def search_manhwa(query):
     results = []
 
-    # مواقع البحث
     sites = {
         "Mangalek": f"https://mangalek.net/?s={query}",
         "ArabManga": f"https://arab-manga.com/?s={query}",
@@ -38,14 +46,12 @@ def search_manhwa(query):
         try:
             response = requests.get(url, headers=headers, timeout=10)
             soup = BeautifulSoup(response.text, "html.parser")
-
-            # نحاول نلقط أول نتيجة
             first_link = soup.find("a", href=True)
             if first_link:
                 results.append(f"🔹 <b>{name}</b>: <a href='{first_link['href']}'>رابط</a>")
             else:
                 results.append(f"🔹 <b>{name}</b>: لا يوجد نتائج.")
-        except Exception as e:
+        except Exception:
             results.append(f"🔹 <b>{name}</b>: خطأ أثناء البحث.")
 
     return "\n".join(results)
@@ -54,11 +60,10 @@ def search_manhwa(query):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("أرسل اسم المانهوا التي تريد البحث عنها 🔍", reply_markup=category_keyboard())
 
-# استقبال الاسم
+# رسالة البحث
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
     await update.message.reply_html("⏳ يتم البحث عن:\n<b>{}</b>".format(query))
-
     result = search_manhwa(query)
     await update.message.reply_html(result, disable_web_page_preview=True)
 
@@ -66,16 +71,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     category = query.data.split(":")[1]
     await query.message.reply_text(f"أرسل اسم مانهوا من تصنيف: {category} 📚")
 
 # تشغيل البوت
 if __name__ == "__main__":
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        raise ValueError("⚠️ BOT_TOKEN غير موجود في البيئة!")
-
     app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
